@@ -1,3 +1,6 @@
 [submodule "osm4routing2"]
 	path = osm4routing2
 	url = git@github.com:Tristramg/osm4routing2
+[submodule "networkx"]
+	path = networkx
+	url = git@github.com:networkx/networkx
