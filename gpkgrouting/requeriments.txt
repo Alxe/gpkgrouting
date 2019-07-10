@@ -1,0 +1,4 @@
+decorator==4.4.0
+networkx==2.3
+osmium==2.15.2
+Shapely==1.6.4.post2
