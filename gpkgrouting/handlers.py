@@ -1,18 +1,19 @@
 """
 """
 import collections
-import pandas as pd
+import geopandas as gpd
+# import osmium
 
 from osmium import osmium
-from shapely import geometry, ops, wkb, wkt
+from shapely import geometry, wkb, wkt
 
 import typing as tp
 
 wktfab = osmium.geom.WKTFactory()
 wkbfab = osmium.geom.WKBFactory()
 
-class AbstractHandler(osmium.SimpleWriter):
-  def data(self) -> tp.Iterable[tp.Tuple[str, pd.DataFrame]]:
+class GeometryHandler(osmium.SimpleHandler):
+  def data(self) -> tp.Iterable[tp.Tuple[str, gpd.GeoDataFrame]]:
     raise NotImplementedError
 
 class AllWayHandler(osmium.SimpleHandler):
@@ -27,29 +28,26 @@ class AllWayHandler(osmium.SimpleHandler):
   ways = []
 
   def data(self):
-    yield ('ways', pd.DataFrame.from_records(self.ways))
+    yield ('ways', gpd.GeoDataFrame.from_records(self.ways))
 
   def way(self, w: osmium.osm.Way):
-    try:
-      data = wktfab.create_linestring(w)
-      geom = wkt.loads(data)
-      
-      self.ways.append({
-        'source': geom.coords[0],
-        'target': geom.coords[-1],
-        'length': geom.length,
-        'wkt': geom.to_wkt()
-      })
-    except RuntimeError as e:
-      print(f'Error "{e}" caused by {w}')
+    data = wktfab.create_linestring(w)
+    geom = wkt.loads(data)
+    
+    self.ways.append({
+      'source': geom.coords[0],
+      'target': geom.coords[-1],
+      'length': geom.length,
+      'geom': geom
+    })
 
 class TopologyHandler(osmium.SimpleHandler):
-  nodes: pd.DataFrame = None
-  edges: pd.DataFrame = None
+  nodes: gpd.GeoDataFrame = None
+  links: gpd.GeoDataFrame = None
 
   def data(self):
     yield ('nodes', self.nodes)
-    yield ('edges', self.edges)
+    yield ('links', self.links)
 
   def way(self, w: osmium.osm.Way):
     # Store all node WKB location, tracked by node id
@@ -67,7 +65,7 @@ class TopologyHandler(osmium.SimpleHandler):
     self._counter = +self._counter # Remove less than ones
 
     nodes = dict()
-    edges = dict()
+    links = dict()
     for id, way in self._ways.items():
       source = way[0]
       steps = [source]
@@ -86,28 +84,39 @@ class TopologyHandler(osmium.SimpleHandler):
           id,
           source,
           target,
-          geom.length,
-          geom.to_wkt(),
+          geom,
         )
 
-        if id not in edges:
-          edges[id] = [edge]
+        if id not in links:
+          links[id] = [edge]
         else:
-          edges[id].append(edge)
+          links[id].append(edge)
 
         # Add nodes
         if source not in nodes:
-          nodes[source] = self._nodes[source]
+          nodes[source] = wkt.loads(self._nodes[source])
         if target not in nodes:
-          nodes[target] = self._nodes[target]
+          nodes[target] = wkt.loads(self._nodes[target])
 
         source = target
         steps = [target]
 
-    edges_data = (x for sublist in edges.values() for x in sublist)
+    # Flatten data 
+    nodes_data = (tuple(x) for x in nodes.items())
+    links_data = (x for sublist in links.values() for x in sublist)
 
-    self.nodes = pd.DataFrame.from_dict(nodes, orient='index', columns=['wkt']).rename_axis('fid')
-    self.edges = pd.DataFrame.from_records(edges_data, columns=['fid', 'source', 'target', 'length', 'wkt']).set_index('fid')
+    self.nodes = gpd.GeoDataFrame(
+      data=nodes_data, 
+      columns=['node_id', 'geom'],
+      geometry='geom',
+      crs={'init':'epsg:4326'},
+    )
+    self.links = gpd.GeoDataFrame(
+      data=links_data, 
+      columns=['way_id', 'source', 'target', 'geom'],
+      geometry='geom',
+      crs={'init':'epsg:4326'},
+    )
 
   def apply_file(self, *args, **kwargs):
     # Create temporal items to handle topology reading
