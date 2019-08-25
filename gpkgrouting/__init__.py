@@ -34,7 +34,7 @@ if __name__ == '__main__':
 
     for key, df in handler.data():
       if factory is TopologyHandler:
-        df.to_file(output_path.joinpath(f'{output_filename}.gpkg'), include_index=True, driver='GPKG', layer=f'network_{key}')
+        df.to_file(output_path.joinpath(f'{output_filename}.gpkg'), include_index=True, driver='GPKG', layer=f'nw_{key}')
       else:
         df.to_csv(output_path.joinpath(f'{output_filename}_{key}.csv'))
       ##
